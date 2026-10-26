@@ -46,8 +46,12 @@ jobs:
       - name: Giải mã keystore (nếu có secret)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        if: env.KEYSTORE_BASE64 != ''
+        # không dùng `if: env.KEYSTORE_BASE64` vì env của chính bước chưa có khi tính điều kiện
         run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "Không có secret KEYSTORE_BASE64: bản release sẽ ký bằng debug key"
+            exit 0
+          fi
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
