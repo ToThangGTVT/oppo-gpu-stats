@@ -6,6 +6,11 @@
 //   adb push statd /data/local/tmp/ && adb shell /data/local/tmp/statd
 //   adb shell su -c /data/local/tmp/statd      # máy đã root: đọc được cả tải GPU
 //
+// Lệnh từ app (một dòng, chỉ nhận từ uid của app overlay hoặc shell/root):
+//   block <pkg1,pkg2,...>   thay danh sách app bị chặn chạy nền (rỗng = bỏ chặn hết)
+//   blockstatus             trả về danh sách hiện tại và số lần đã force-stop
+// Trả lời bằng một dòng bắt đầu bằng "ok" hoặc "err".
+//
 // Tuỳ chọn: -f chạy foreground (in ra stdout), -i <ms> chu kỳ lấy mẫu, -p <port>.
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -25,6 +30,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "blocker.h"
 #include "stats.h"
 
 static float readGpuMemMb() {
@@ -183,6 +189,41 @@ private:
     double lastT_ = 0;
 };
 
+struct Client {
+    int fd;
+    std::string in;
+};
+
+std::string handleCommand(const std::string& line, int fd, BackgroundBlocker& blocker) {
+    static int appUid = -1;
+    int uid = peerUid(fd);
+    if (uid != 0 && uid != 2000) {
+        if (uid >= 0 && uid != appUid) appUid = packageUid("com.example.hwoverlay");  // cài lại có thể đổi uid
+        if (uid < 0 || uid != appUid) return "err permission denied";
+    }
+    if (line == "blockstatus") {
+        std::string r = "ok kills=" + std::to_string(blocker.kills()) + " last=" +
+                        (blocker.lastKilled().empty() ? "-" : blocker.lastKilled()) + " list=";
+        for (size_t i = 0; i < blocker.list().size(); i++) r += (i ? "," : "") + blocker.list()[i];
+        return r;
+    }
+    if (line.rfind("block", 0) == 0 && (line.size() == 5 || line[5] == ' ')) {
+        std::vector<std::string> pkgs;
+        std::string csv = line.size() > 6 ? line.substr(6) : "";
+        size_t start = 0;
+        while (start <= csv.size()) {
+            size_t comma = csv.find(',', start);
+            std::string p = csv.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            if (!p.empty()) pkgs.push_back(p);
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+        std::string err = blocker.setList(pkgs);
+        return err.empty() ? "ok " + std::to_string(pkgs.size()) : "err " + err;
+    }
+    return "err unknown command";
+}
+
 int main(int argc, char** argv) {
     bool foreground = false;
     int intervalMs = 500, port = 27183;
@@ -226,11 +267,34 @@ int main(int argc, char** argv) {
     GpuWorkMeter gpuWork;
     ProcTop procTop;
     Sample lastTop;
-    std::vector<int> clients;
+    std::vector<Client> clients;
+    BackgroundBlocker blocker;
+    blocker.load();
+    unsigned loop = 0;
     float gpuMem = -1.f;
     unsigned tick = 0;
     for (;;) {
-        for (int c; (c = accept4(srv, nullptr, nullptr, SOCK_CLOEXEC)) >= 0;) clients.push_back(c);
+        for (int c; (c = accept4(srv, nullptr, nullptr, SOCK_CLOEXEC)) >= 0;) clients.push_back({c, {}});
+
+        // Đọc lệnh từ các client.
+        for (Client& cl : clients) {
+            char buf[1024];
+            ssize_t n;
+            while ((n = recv(cl.fd, buf, sizeof buf, MSG_DONTWAIT)) > 0) cl.in.append(buf, (size_t)n);
+            if (cl.in.size() > 16384) cl.in.clear();
+            size_t nl;
+            while ((nl = cl.in.find('\n')) != std::string::npos) {
+                std::string cmd = cl.in.substr(0, nl);
+                cl.in.erase(0, nl + 1);
+                if (!cmd.empty() && cmd.back() == '\r') cmd.pop_back();
+                if (cmd.empty()) continue;
+                std::string reply = handleCommand(cmd, cl.fd, blocker) + "\n";
+                send(cl.fd, reply.data(), reply.size(), MSG_NOSIGNAL | MSG_DONTWAIT);
+            }
+        }
+
+        // Chặn chạy nền: kiểm tra mỗi ~2 giây, kể cả khi không có app nào kết nối.
+        if (loop++ % (unsigned)(2000 / intervalMs > 0 ? 2000 / intervalMs : 1) == 0) blocker.enforce(monotonicSec());
 
         Sample s;
         collector.sample(s);
@@ -246,8 +310,8 @@ int main(int argc, char** argv) {
         if (foreground) fputs(line.c_str(), stdout), fflush(stdout);
 
         for (size_t i = 0; i < clients.size();) {
-            if (send(clients[i], line.data(), line.size(), MSG_NOSIGNAL | MSG_DONTWAIT) < 0) {
-                close(clients[i]);
+            if (send(clients[i].fd, line.data(), line.size(), MSG_NOSIGNAL | MSG_DONTWAIT) < 0) {
+                close(clients[i].fd);
                 clients.erase(clients.begin() + (long)i);
             } else {
                 i++;

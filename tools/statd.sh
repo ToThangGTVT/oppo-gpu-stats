@@ -40,7 +40,7 @@ esac
 out="$ROOT/build/statd/$abi"
 mkdir -p "$out"
 "$bin/${triple}${API}-clang++" -std=c++17 -O2 -Wall -static-libstdc++ \
-    "$SRC/statd.cpp" "$SRC/stats.cpp" -o "$out/statd"
+    "$SRC/statd.cpp" "$SRC/stats.cpp" "$SRC/blocker.cpp" -o "$out/statd"
 echo "Đã build $out/statd"
 
 [ "$mode" = build ] && exit 0
