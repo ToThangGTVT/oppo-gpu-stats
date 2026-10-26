@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Button permButton;
     private Button toggleButton;
+    private Button blockButton;
     private TextView statusView;
     private SharedPreferences prefs;
 
@@ -84,6 +85,10 @@ public class MainActivity extends Activity {
         root.addView(detailCheckBox("Swap / ZRAM", OverlayService.DETAIL_SWAP));
         root.addView(detailCheckBox("Top 3 tiến trình tốn CPU (cần statd)", OverlayService.DETAIL_TOP_PROCS));
 
+        blockButton = new Button(this);
+        blockButton.setOnClickListener(v -> startActivity(new Intent(this, BlockActivity.class)));
+        root.addView(blockButton);
+
         statusView = new TextView(this);
         statusView.setTypeface(Typeface.MONOSPACE);
         statusView.setPadding(0, pad, 0, pad);
@@ -109,6 +114,9 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         handler.post(refresh);
+        // statd có thể vừa được chạy lại: gửi lại danh sách chặn đã lưu trong app.
+        String list = String.join(",", new java.util.TreeSet<>(BlockActivity.blockedSet(this)));
+        if (!list.isEmpty()) new Thread(() -> StatdClient.request("block " + list)).start();
     }
 
     @Override
@@ -162,6 +170,8 @@ public class MainActivity extends Activity {
         permButton.setVisibility(canDraw ? View.GONE : View.VISIBLE);
         toggleButton.setEnabled(canDraw);
         toggleButton.setText(OverlayService.running ? "Tắt overlay" : "Bật overlay");
+        int n = BlockActivity.blockedSet(this).size();
+        blockButton.setText(n > 0 ? "Chặn chạy nền (" + n + " app)…" : "Chặn chạy nền…");
         statusView.setText(NativeBridge.status());
     }
 }

@@ -14,6 +14,8 @@ Phần lấy số liệu và vẽ overlay viết bằng C++ (NDK), phần Java c
 | `app/src/main/cpp/jni_bridge.cpp` | Luồng native lấy mẫu 500 ms, vẽ thẳng lên `ANativeWindow`; kết nối statd |
 | `app/src/main/cpp/statd.cpp` | Daemon chạy bằng quyền shell, phát số liệu qua `127.0.0.1:27183` |
 | `app/src/main/java/.../OverlayService.java` | Foreground service, cửa sổ `TYPE_APPLICATION_OVERLAY`, atlas font hệ thống |
+| `app/src/main/cpp/blocker.cpp` | Chặn chạy nền trong statd: force-stop + standby bucket |
+| `app/src/main/java/.../BlockActivity.java` | Chọn app bị chặn chạy nền |
 | `tools/statd.sh` | Build statd bằng NDK, push và chạy qua adb |
 
 ## Vì sao cần statd
@@ -61,6 +63,17 @@ Trong mục **Hiển thị chi tiết** của app có thể bật thêm từng p
 | Top 3 tiến trình tốn CPU | `/proc/<pid>/stat` qua statd (% của một nhân, như `top`) |
 
 <img src="docs/overlay-detail.png" width="300">
+
+### Chặn chạy nền
+
+App → **Chặn chạy nền…** → tick các app muốn chặn (ví dụ Facebook). Cần statd đang chạy.
+
+- App bị chặn mà rời màn hình quá 10 giây và còn tiến trình thì statd chạy `am force-stop`:
+  Android không giao broadcast/job/alarm/thông báo đẩy cho app đó tới khi bạn tự mở lại.
+- Khi thêm vào danh sách, app còn bị đưa vào standby bucket `restricted`; bỏ chặn thì trả về `active`.
+- Danh sách được statd lưu ở `/data/local/tmp/statd.block`, chạy lại statd vẫn giữ.
+- statd chỉ nhận lệnh từ uid của app này (tra trong `/proc/net/tcp`) hoặc shell/root,
+  và từ chối `android`, `com.android.*` và chính app này.
 
 Kéo overlay để di chuyển, chạm đúp để đổi chế độ gọn (chỉ chữ).
 "Khóa vị trí" cho phép chạm xuyên qua overlay (Android 12+ yêu cầu độ mờ ≤ 0.8 nên overlay sẽ nhạt hơn).
