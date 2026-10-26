@@ -16,8 +16,16 @@ android {
         targetSdk 36
         versionCode((System.getenv('VERSION_CODE') ?: '1') as int)
         versionName(System.getenv('VERSION_NAME') ?: '1.0.0')
-        ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+    }
+
+    // Mỗi ABI một APK riêng (nhẹ hơn), thêm bản universal chứa tất cả.
+    // Tên file: app-arm64-v8a-release.apk, app-armeabi-v7a-release.apk, app-universal-release.apk...
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            universalApk true
         }
     }
 
