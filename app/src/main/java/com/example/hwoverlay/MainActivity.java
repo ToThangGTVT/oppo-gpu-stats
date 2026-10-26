@@ -73,6 +73,17 @@ public class MainActivity extends Activity {
         root.addView(prefCheckBox("Khóa vị trí + chạm xuyên qua overlay", OverlayService.KEY_LOCKED));
         root.addView(prefCheckBox("Chế độ gọn (chỉ chữ, không đồ thị)", OverlayService.KEY_COMPACT));
 
+        TextView detailTitle = new TextView(this);
+        detailTitle.setText("Hiển thị chi tiết");
+        detailTitle.setTextSize(16);
+        detailTitle.setPadding(0, pad, 0, 0);
+        root.addView(detailTitle);
+        root.addView(detailCheckBox("Từng nhân CPU (tải + xung)", OverlayService.DETAIL_CORES));
+        root.addView(detailCheckBox("Nhiệt độ CPU / GPU / pin", OverlayService.DETAIL_TEMPS));
+        root.addView(detailCheckBox("Pin: %, công suất sạc/xả, điện áp", OverlayService.DETAIL_BATTERY));
+        root.addView(detailCheckBox("Swap / ZRAM", OverlayService.DETAIL_SWAP));
+        root.addView(detailCheckBox("Top 3 tiến trình tốn CPU (cần statd)", OverlayService.DETAIL_TOP_PROCS));
+
         statusView = new TextView(this);
         statusView.setTypeface(Typeface.MONOSPACE);
         statusView.setPadding(0, pad, 0, pad);
@@ -112,11 +123,28 @@ public class MainActivity extends Activity {
         cb.setChecked(prefs.getBoolean(key, false));
         cb.setOnCheckedChangeListener((b, checked) -> {
             prefs.edit().putBoolean(key, checked).apply();
-            if (OverlayService.running) {
-                startService(new Intent(this, OverlayService.class).setAction(OverlayService.ACTION_RELOAD));
-            }
+            reloadOverlay();
         });
         return cb;
+    }
+
+    private CheckBox detailCheckBox(String label, int flag) {
+        CheckBox cb = new CheckBox(this);
+        cb.setText(label);
+        cb.setChecked((prefs.getInt(OverlayService.KEY_DETAILS, 0) & flag) != 0);
+        cb.setOnCheckedChangeListener((b, checked) -> {
+            int details = prefs.getInt(OverlayService.KEY_DETAILS, 0);
+            details = checked ? details | flag : details & ~flag;
+            prefs.edit().putInt(OverlayService.KEY_DETAILS, details).apply();
+            reloadOverlay();
+        });
+        return cb;
+    }
+
+    private void reloadOverlay() {
+        if (OverlayService.running) {
+            startService(new Intent(this, OverlayService.class).setAction(OverlayService.ACTION_RELOAD));
+        }
     }
 
     private void toggleOverlay() {

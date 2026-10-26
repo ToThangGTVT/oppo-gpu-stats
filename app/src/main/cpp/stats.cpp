@@ -88,6 +88,23 @@ bool readGpuLoad(const char* path, GpuKind kind, uint64_t& prevBusy, uint64_t& p
     return true;
 }
 
+bool startsWith(const char* s, const char* prefix) {
+    return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+// Nhiệt độ lớn nhất (°C) trong các thermal zone, kNoValue nếu không đọc được.
+float maxTemp(const std::vector<std::string>& paths) {
+    float best = kNoValue;
+    for (const std::string& p : paths) {
+        char buf[32];
+        long long v;
+        if (readSmallFile(p.c_str(), buf, sizeof buf) <= 0 || parseInts(buf, &v, 1) != 1) continue;
+        float c = v > 1000 || v < -1000 ? (float)v / 1000.f : (float)v;  // đa số kernel dùng m°C
+        if (c > -30.f && c < 150.f && c > best) best = c;
+    }
+    return best;
+}
+
 }  // namespace
 
 bool readFirstInt(const char* path, long long& v) {
@@ -139,12 +156,45 @@ StatsCollector::StatsCollector() {
             break;
         }
     }
+
+    // Phân loại thermal zone theo tên: Qualcomm (cpu-*, cpuss-*, gpuss-*), MediaTek (mtktscpu),
+    // Exynos (BIG/MID/LITTLE, G3D), pin (battery, bat_therm).
+    for (int i = 0; i < 128; i++) {
+        char path[64], type[64];
+        snprintf(path, sizeof path, "/sys/class/thermal/thermal_zone%d/type", i);
+        int n = readSmallFile(path, type, sizeof type);
+        if (n <= 0) {
+            if (i > 0 && access(path, F_OK) != 0) break;
+            continue;
+        }
+        for (char* c = type; *c; c++) {
+            if (*c == '\n') *c = 0;
+            else if (*c >= 'A' && *c <= 'Z') *c += 32;
+        }
+        snprintf(path, sizeof path, "/sys/class/thermal/thermal_zone%d/temp", i);
+        if (startsWith(type, "cpu") || strstr(type, "tscpu") || !strcmp(type, "big") ||
+            !strcmp(type, "mid") || !strcmp(type, "little")) {
+            cpuTempPaths_.push_back(path);
+        } else if (startsWith(type, "gpu") || strstr(type, "tsgpu") || !strcmp(type, "g3d")) {
+            gpuTempPaths_.push_back(path);
+        } else if (!strcmp(type, "battery") || startsWith(type, "bat_therm") ||
+                   !strcmp(type, "battery_therm")) {
+            batTempPaths_.push_back(path);
+        }
+    }
 }
 
 void StatsCollector::sample(Sample& out) {
     readCpu(out);
     readGpu(out);
     readRam(out);
+    readTemps(out);
+}
+
+void StatsCollector::readTemps(Sample& out) {
+    out.cpuTemp = maxTemp(cpuTempPaths_);
+    out.gpuTemp = maxTemp(gpuTempPaths_);
+    out.batTemp = maxTemp(batTempPaths_);
 }
 
 void StatsCollector::readCpu(Sample& out) {
@@ -265,6 +315,14 @@ void StatsCollector::readRam(Sample& out) {
     out.ramUsedMb = (float)(total - avail) / 1024.f;
     out.ram = 100.f * out.ramUsedMb / out.ramTotalMb;
     ramOk_ = true;
+
+    long long swapTotal = -1, swapFree = -1;
+    if ((p = strstr(buf, "SwapTotal:"))) parseInts(p, &swapTotal, 1);
+    if ((p = strstr(buf, "SwapFree:"))) parseInts(p, &swapFree, 1);
+    if (swapTotal > 0 && swapFree >= 0) {
+        out.swapTotalMb = (float)swapTotal / 1024.f;
+        out.swapUsedMb = (float)(swapTotal - swapFree) / 1024.f;
+    }
 }
 
 std::string StatsCollector::describe() const {
@@ -297,8 +355,17 @@ std::string sampleToLine(const Sample& s) {
         snprintf(tmp, sizeof tmp, i ? ",%d" : "%d", s.coreMhz[i]);
         line += tmp;
     }
-    snprintf(tmp, sizeof tmp, " gpu=%.1f gf=%d gm=%.0f\n", s.gpu, s.gpuMhz, s.gpuMemMb);
+    snprintf(tmp, sizeof tmp, " gpu=%.1f gf=%d gm=%.0f", s.gpu, s.gpuMhz, s.gpuMemMb);
     line += tmp;
+    if (s.nTop > 0) {
+        // tên tiến trình đã được statd làm sạch: không có khoảng trắng, ':' hay ','
+        line += " tp=";
+        for (int i = 0; i < s.nTop; i++) {
+            snprintf(tmp, sizeof tmp, i ? ",%s:%.0f" : "%s:%.0f", s.topName[i], s.topPct[i]);
+            line += tmp;
+        }
+    }
+    line += "\n";
     return line;
 }
 
@@ -329,6 +396,21 @@ bool sampleFromLine(const char* line, Sample& s) {
         else if (!strcmp(k, "gpu")) s.gpu = strtof(v, nullptr);
         else if (!strcmp(k, "gf")) s.gpuMhz = atoi(v);
         else if (!strcmp(k, "gm")) s.gpuMemMb = strtof(v, nullptr);
+        else if (!strcmp(k, "tp")) {
+            s.nTop = 0;
+            char* save2 = nullptr;
+            char list[512];
+            strncpy(list, v, sizeof list - 1);
+            list[sizeof list - 1] = 0;
+            for (char* e = strtok_r(list, ",", &save2); e && s.nTop < kMaxTopProcs;
+                 e = strtok_r(nullptr, ",", &save2)) {
+                char* colon = strrchr(e, ':');
+                if (!colon) continue;
+                *colon = 0;
+                snprintf(s.topName[s.nTop], sizeof s.topName[0], "%s", e);
+                s.topPct[s.nTop++] = strtof(colon + 1, nullptr);
+            }
+        }
     }
     return any;
 }

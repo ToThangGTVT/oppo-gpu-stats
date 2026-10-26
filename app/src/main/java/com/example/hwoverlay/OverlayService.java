@@ -8,6 +8,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
@@ -17,8 +18,11 @@ import android.graphics.PixelFormat;
 import android.graphics.SurfaceTexture;
 import android.graphics.Typeface;
 import android.hardware.input.InputManager;
+import android.os.BatteryManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.Surface;
@@ -32,6 +36,13 @@ public class OverlayService extends Service {
     static final String PREFS = "overlay";
     static final String KEY_LOCKED = "locked";
     static final String KEY_COMPACT = "compact";
+    static final String KEY_DETAILS = "details";
+    // Khớp với DetailFlags trong renderer.h
+    static final int DETAIL_CORES = 1;
+    static final int DETAIL_TEMPS = 2;
+    static final int DETAIL_BATTERY = 4;
+    static final int DETAIL_SWAP = 8;
+    static final int DETAIL_TOP_PROCS = 16;
     private static final String KEY_X = "x";
     private static final String KEY_Y = "y";
     private static final String CHANNEL = "overlay";
@@ -43,6 +54,14 @@ public class OverlayService extends Service {
     private WindowManager.LayoutParams lp;
     private TextureView view;
     private Surface surface;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable batteryPoll = new Runnable() {
+        @Override
+        public void run() {
+            updateBattery();
+            handler.postDelayed(this, 1000);
+        }
+    };
 
     @Override
     public void onCreate() {
@@ -50,6 +69,7 @@ public class OverlayService extends Service {
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         startInForeground();
         addOverlay();
+        handler.post(batteryPoll);
         running = true;
     }
 
@@ -67,6 +87,7 @@ public class OverlayService extends Service {
 
     @Override
     public void onDestroy() {
+        handler.removeCallbacks(batteryPoll);
         removeOverlay();
         running = false;
         super.onDestroy();
@@ -105,9 +126,10 @@ public class OverlayService extends Service {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         boolean locked = prefs.getBoolean(KEY_LOCKED, false);
         boolean compact = prefs.getBoolean(KEY_COMPACT, false);
+        int details = prefs.getInt(KEY_DETAILS, 0);
         float density = getResources().getDisplayMetrics().density;
         loadSystemFont(density);
-        int[] size = NativeBridge.measure(density, compact);
+        int[] size = NativeBridge.measure(density, compact, details);
 
         int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
@@ -135,7 +157,7 @@ public class OverlayService extends Service {
             public void onSurfaceTextureAvailable(SurfaceTexture st, int w, int h) {
                 st.setDefaultBufferSize(size[0], size[1]);
                 surface = new Surface(st);
-                NativeBridge.start(surface, density, compact, INTERVAL_MS);
+                NativeBridge.start(surface, density, compact, details, INTERVAL_MS);
             }
 
             @Override
@@ -156,10 +178,29 @@ public class OverlayService extends Service {
         wm.addView(view, lp);
     }
 
+    private void updateBattery() {
+        Intent b = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (b == null) return;
+        int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+        int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+        float volts = b.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1) / 1000f;
+        BatteryManager bm = getSystemService(BatteryManager.class);
+        long current = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+        float watts = -1000f;
+        if (current != Integer.MIN_VALUE && volts > 0) {
+            // Chuẩn là µA, nhưng nhiều máy trả về mA.
+            double amps = Math.abs(current) < 10000 ? current / 1000.0 : current / 1_000_000.0;
+            watts = (float) (amps * volts);
+        }
+        NativeBridge.setBattery(scale > 0 && level >= 0 ? level * 100 / scale : -1, watts,
+                volts > 0 ? volts : -1000f);
+    }
+
     /** Dựng atlas glyph bằng font hệ thống (font OEM nếu có) để phần native tự vẽ chữ. */
     private static void loadSystemFont(float density) {
         buildFontAtlas(0, 11 * density, 500, density);
         buildFontAtlas(1, 17 * density, 700, density);
+        buildFontAtlas(2, 8.5f * density, 500, density);
     }
 
     private static void buildFontAtlas(int slot, float sizePx, int weight, float density) {
@@ -170,10 +211,10 @@ public class OverlayService extends Service {
         paint.setTextSize(sizePx);
         Paint.FontMetricsInt fm = paint.getFontMetricsInt();
         int pad = (int) Math.ceil(2 * density);
-        float[] advances = new float[95];
+        float[] advances = new float[96];
         float maxAdvance = 0;
         for (int i = 0; i < advances.length; i++) {
-            advances[i] = paint.measureText(String.valueOf((char) (32 + i)));
+            advances[i] = paint.measureText(glyph(i));
             maxAdvance = Math.max(maxAdvance, advances[i]);
         }
         int cellW = (int) Math.ceil(maxAdvance) + 2 * pad;
@@ -181,10 +222,15 @@ public class OverlayService extends Service {
         Bitmap atlas = Bitmap.createBitmap(cellW * advances.length, cellH, Bitmap.Config.ALPHA_8);
         Canvas canvas = new Canvas(atlas);
         for (int i = 0; i < advances.length; i++) {
-            canvas.drawText(String.valueOf((char) (32 + i)), i * cellW + pad, pad - fm.ascent, paint);
+            canvas.drawText(glyph(i), i * cellW + pad, pad - fm.ascent, paint);
         }
         NativeBridge.setFont(slot, atlas, advances, cellW, cellH, pad, -fm.ascent);
         atlas.recycle();
+    }
+
+    /** Glyph thứ i trong atlas: ASCII 32..126, sau đó là dấu độ. */
+    private static String glyph(int i) {
+        return i < 95 ? String.valueOf((char) (32 + i)) : "\u00B0";
     }
 
     private void removeOverlay() {
