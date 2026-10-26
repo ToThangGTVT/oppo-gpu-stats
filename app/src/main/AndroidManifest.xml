@@ -5,8 +5,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Kết nối tới daemon statd qua 127.0.0.1 -->
+    <!-- Kết nối tới daemon statd qua 127.0.0.1 và GitHub API -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Cài bản cập nhật tải từ GitHub Releases -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Liệt kê app có biểu tượng trên launcher cho màn hình chặn chạy nền -->
     <queries>
