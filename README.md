@@ -47,6 +47,21 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Mở app → cấp quyền "Hiển thị trên ứng dụng khác" → **Bật overlay**.
+
+### Hiển thị chi tiết
+
+Trong mục **Hiển thị chi tiết** của app có thể bật thêm từng phần (đổi là overlay cập nhật ngay):
+
+| Tuỳ chọn | Nguồn dữ liệu |
+|---|---|
+| Từng nhân CPU (tải + xung) | `/proc/stat` qua statd, cpufreq |
+| Nhiệt độ CPU / GPU / pin | `/sys/class/thermal` (app đọc được trực tiếp) |
+| Pin: %, công suất sạc/xả, điện áp | `BatteryManager` (sysfs pin bị chặn) |
+| Swap / ZRAM | `/proc/meminfo` |
+| Top 3 tiến trình tốn CPU | `/proc/<pid>/stat` qua statd (% của một nhân, như `top`) |
+
+<img src="docs/overlay-detail.png" width="300">
+
 Kéo overlay để di chuyển, chạm đúp để đổi chế độ gọn (chỉ chữ).
 "Khóa vị trí" cho phép chạm xuyên qua overlay (Android 12+ yêu cầu độ mờ ≤ 0.8 nên overlay sẽ nhạt hơn).
 
