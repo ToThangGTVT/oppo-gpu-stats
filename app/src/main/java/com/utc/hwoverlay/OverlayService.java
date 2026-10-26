@@ -1,4 +1,4 @@
-package com.example.hwoverlay;
+package com.utc.hwoverlay;
 
 import android.annotation.SuppressLint;
 import android.app.Notification;
@@ -31,8 +31,8 @@ import android.view.WindowManager;
 
 /** Foreground service giữ cửa sổ overlay nổi trên mọi ứng dụng. */
 public class OverlayService extends Service {
-    static final String ACTION_STOP = "com.example.hwoverlay.STOP";
-    static final String ACTION_RELOAD = "com.example.hwoverlay.RELOAD";
+    static final String ACTION_STOP = "com.utc.hwoverlay.STOP";
+    static final String ACTION_RELOAD = "com.utc.hwoverlay.RELOAD";
     static final String PREFS = "overlay";
     static final String KEY_LOCKED = "locked";
     static final String KEY_COMPACT = "compact";

@@ -10,6 +10,9 @@
 #include <unordered_map>
 #include <vector>
 
+// Package của app overlay: được phép gửi lệnh cho statd và không bao giờ bị chặn.
+constexpr const char* kAppPackage = "com.utc.hwoverlay";
+
 class BackgroundBlocker {
 public:
     static constexpr double kGraceSec = 10.0;

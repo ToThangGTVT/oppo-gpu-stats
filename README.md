@@ -88,7 +88,19 @@ Kéo overlay để di chuyển, chạm đúp để đổi chế độ gọn (ch�
 | `release/*` | Chuẩn bị phát hành, tách từ `develop`, merge vào `main` và `develop` | build release |
 | `hotfix/*` | Sửa lỗi gấp, tách từ `main`, merge vào `main` và `develop` | build release |
 
-Push tag `v*` sẽ tạo GitHub Release kèm APK và statd cho `arm64-v8a`, `armeabi-v7a`, `x86_64`.
+Push tag `v*` sẽ tạo GitHub Release kèm:
+
+- `oppo-gpu-stats-<version>-arm64-v8a.apk`, `...-armeabi-v7a.apk`: APK riêng cho từng loại CPU
+- `oppo-gpu-stats-<version>-universal.apk`: chứa mọi ABI
+- `statd-arm64-v8a`, `statd-armeabi-v7a`, `statd-x86_64`
+
+## Kiểm tra cập nhật
+
+App gọi `https://api.github.com/repos/ToThangGTVT/oppo-gpu-stats/releases/latest` khi mở,
+so `tag_name` với `versionName` hiện tại. Có bản mới thì nút **Cập nhật** tải APK khớp
+`Build.SUPPORTED_ABIS` của máy (không có thì lấy bản universal) bằng DownloadManager và mở
+trình cài đặt. Android chỉ cho cài đè khi APK mới được ký **cùng keystore** với bản đang cài,
+vì vậy cần cấu hình secrets ký app bên dưới.
 
 Ký APK release: thêm các secret `KEYSTORE_BASE64` (keystore mã hóa base64), `KEYSTORE_PASSWORD`,
 `KEY_ALIAS`, `KEY_PASSWORD`. Chưa có secret thì bản release được ký bằng debug key.

@@ -17,7 +17,6 @@
 namespace {
 
 constexpr const char* kListFile = "/data/local/tmp/statd.block";
-constexpr const char* kSelfPackage = "com.example.hwoverlay";
 
 // Chạy lệnh không qua shell (tránh chèn lệnh), chờ xong, bỏ output.
 int run(const std::vector<const char*>& argv) {
@@ -85,7 +84,7 @@ std::unordered_set<std::string> runningPackages() {
 }
 
 bool isProtected(const std::string& pkg) {
-    return pkg == kSelfPackage || pkg == "android" || pkg.rfind("com.android.", 0) == 0;
+    return pkg == kAppPackage || pkg == "android" || pkg.rfind("com.android.", 0) == 0;
 }
 
 }  // namespace

@@ -1,4 +1,4 @@
-package com.example.hwoverlay;
+package com.utc.hwoverlay;
 
 import android.graphics.Bitmap;
 import android.view.Surface;

@@ -1,4 +1,4 @@
-package com.example.hwoverlay;
+package com.utc.hwoverlay;
 
 import android.Manifest;
 import android.app.Activity;
@@ -35,6 +35,8 @@ public class MainActivity extends Activity {
     private Button permButton;
     private Button toggleButton;
     private Button blockButton;
+    private Button updateButton;
+    private UpdateChecker.Release latest;
     private TextView statusView;
     private SharedPreferences prefs;
 
@@ -89,6 +91,10 @@ public class MainActivity extends Activity {
         blockButton.setOnClickListener(v -> startActivity(new Intent(this, BlockActivity.class)));
         root.addView(blockButton);
 
+        updateButton = new Button(this);
+        updateButton.setOnClickListener(v -> onUpdateClick());
+        root.addView(updateButton);
+
         statusView = new TextView(this);
         statusView.setTypeface(Typeface.MONOSPACE);
         statusView.setPadding(0, pad, 0, pad);
@@ -104,6 +110,8 @@ public class MainActivity extends Activity {
         scroll.addView(root);
         scroll.setFitsSystemWindows(true);
         setContentView(scroll);
+
+        checkUpdate();
 
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, 0);
@@ -152,6 +160,38 @@ public class MainActivity extends Activity {
     private void reloadOverlay() {
         if (OverlayService.running) {
             startService(new Intent(this, OverlayService.class).setAction(OverlayService.ACTION_RELOAD));
+        }
+    }
+
+    private void checkUpdate() {
+        String current = UpdateChecker.currentVersion(this);
+        updateButton.setText("Phiên bản " + current + " — đang kiểm tra cập nhật…");
+        updateButton.setEnabled(false);
+        new Thread(() -> {
+            UpdateChecker.Release r = UpdateChecker.fetchLatest();
+            handler.post(() -> {
+                latest = r;
+                updateButton.setEnabled(true);
+                if (r == null) {
+                    updateButton.setText("Phiên bản " + current + " — không kiểm tra được, thử lại");
+                } else if (UpdateChecker.compareVersions(r.version, current) > 0) {
+                    updateButton.setText("Có bản mới " + r.version + " — cập nhật");
+                } else {
+                    updateButton.setText("Phiên bản " + current + " — đã mới nhất");
+                }
+            });
+        }).start();
+    }
+
+    private void onUpdateClick() {
+        UpdateChecker.Release r = latest;
+        if (r == null || UpdateChecker.compareVersions(r.version, UpdateChecker.currentVersion(this)) <= 0) {
+            checkUpdate();
+        } else if (r.apkUrl != null) {
+            UpdateChecker.downloadAndInstall(this, r);
+        } else {
+            // release không có APK cho ABI của máy: mở trang release
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(r.pageUrl)));
         }
     }
 
