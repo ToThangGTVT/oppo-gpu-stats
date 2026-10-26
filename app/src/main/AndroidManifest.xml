@@ -8,6 +8,14 @@
     <!-- Kết nối tới daemon statd qua 127.0.0.1 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Liệt kê app có biểu tượng trên launcher cho màn hình chặn chạy nền -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:label="HW Overlay"
         android:icon="@android:drawable/sym_def_app_icon"
@@ -21,6 +29,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".BlockActivity"
+            android:exported="false"
+            android:label="Chặn chạy nền" />
 
         <service
             android:name=".OverlayService"
