@@ -1,4 +1,4 @@
-package com.example.hwoverlay;
+package com.utc.hwoverlay;
 
 import android.app.Activity;
 import android.content.Context;

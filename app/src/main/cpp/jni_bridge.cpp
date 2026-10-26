@@ -185,7 +185,7 @@ void stopLoop() {
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_com_example_hwoverlay_NativeBridge_setFont(JNIEnv* env, jclass, jint slot, jobject atlas,
+Java_com_utc_hwoverlay_NativeBridge_setFont(JNIEnv* env, jclass, jint slot, jobject atlas,
                                                jfloatArray advances, jint cellW, jint cellH, jint pad,
                                                jint ascent) {
     AndroidBitmapInfo info;
@@ -203,7 +203,7 @@ Java_com_example_hwoverlay_NativeBridge_setFont(JNIEnv* env, jclass, jint slot, 
 }
 
 JNIEXPORT jintArray JNICALL
-Java_com_example_hwoverlay_NativeBridge_measure(JNIEnv* env, jclass, jfloat density, jboolean compact,
+Java_com_utc_hwoverlay_NativeBridge_measure(JNIEnv* env, jclass, jfloat density, jboolean compact,
                                                jint details) {
     Layout l = computeLayout(density, compact, details);
     jint wh[2] = {l.width, l.height};
@@ -213,7 +213,7 @@ Java_com_example_hwoverlay_NativeBridge_measure(JNIEnv* env, jclass, jfloat dens
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_hwoverlay_NativeBridge_start(JNIEnv* env, jclass, jobject surface, jfloat density,
+Java_com_utc_hwoverlay_NativeBridge_start(JNIEnv* env, jclass, jobject surface, jfloat density,
                                              jboolean compact, jint details, jint intervalMs) {
     stopLoop();
     ANativeWindow* win = ANativeWindow_fromSurface(env, surface);
@@ -227,7 +227,7 @@ Java_com_example_hwoverlay_NativeBridge_start(JNIEnv* env, jclass, jobject surfa
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_hwoverlay_NativeBridge_setBattery(JNIEnv*, jclass, jint level, jfloat watts, jfloat volts) {
+Java_com_utc_hwoverlay_NativeBridge_setBattery(JNIEnv*, jclass, jint level, jfloat watts, jfloat volts) {
     std::lock_guard<std::mutex> lk(g_mu);
     g_batLevel = level;
     g_batWatts = watts;
@@ -235,12 +235,12 @@ Java_com_example_hwoverlay_NativeBridge_setBattery(JNIEnv*, jclass, jint level, 
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_hwoverlay_NativeBridge_stop(JNIEnv*, jclass) {
+Java_com_utc_hwoverlay_NativeBridge_stop(JNIEnv*, jclass) {
     stopLoop();
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_example_hwoverlay_NativeBridge_status(JNIEnv* env, jclass) {
+Java_com_utc_hwoverlay_NativeBridge_status(JNIEnv* env, jclass) {
     std::string s;
     {
         std::lock_guard<std::mutex> lk(g_mu);

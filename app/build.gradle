@@ -6,12 +6,12 @@ plugins {
 def keystoreFile = System.getenv('KEYSTORE_FILE')
 
 android {
-    namespace 'com.example.hwoverlay'
+    namespace 'com.utc.hwoverlay'
     compileSdk 36
     ndkVersion '28.2.13676358'
 
     defaultConfig {
-        applicationId 'com.example.hwoverlay'
+        applicationId 'com.utc.hwoverlay'
         minSdk 26
         targetSdk 36
         versionCode((System.getenv('VERSION_CODE') ?: '1') as int)

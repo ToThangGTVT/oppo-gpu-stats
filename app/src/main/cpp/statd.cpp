@@ -198,7 +198,7 @@ std::string handleCommand(const std::string& line, int fd, BackgroundBlocker& bl
     static int appUid = -1;
     int uid = peerUid(fd);
     if (uid != 0 && uid != 2000) {
-        if (uid >= 0 && uid != appUid) appUid = packageUid("com.example.hwoverlay");  // cài lại có thể đổi uid
+        if (uid >= 0 && uid != appUid) appUid = packageUid(kAppPackage);  // cài lại có thể đổi uid
         if (uid < 0 || uid != appUid) return "err permission denied";
     }
     if (line == "blockstatus") {
