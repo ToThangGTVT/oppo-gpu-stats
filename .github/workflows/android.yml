@@ -1,0 +1,99 @@
+# CI/CD theo gitflow:
+#   feature/*, develop, pull request  -> build + test, upload APK debug làm artifact
+#   release/*, hotfix/*               -> build thêm APK release để QA
+#   tag v* (gắn trên main)            -> build release + statd, tạo GitHub Release
+name: Android CI/CD
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'release/**', 'hotfix/**']
+    tags: ['v*']
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NDK_VERSION: 28.2.13676358
+  CMAKE_VERSION: 3.22.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Cài NDK và CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;$CMAKE_VERSION" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Tính version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION_NAME=0.0.0-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          fi
+          echo "VERSION_CODE=${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      - name: Giải mã keystore (nếu có secret)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build debug + lint
+        run: ./gradlew --no-daemon assembleDebug lintDebug
+
+      - name: Build release
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || github.ref == 'refs/heads/main'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Build statd
+        run: |
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            ./tools/statd.sh --build-only "$abi"
+          done
+          mkdir -p dist
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "build/statd/$abi/statd" "dist/statd-$abi"
+          done
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/oppo-gpu-stats-$VERSION_NAME-debug.apk"
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk "dist/oppo-gpu-stats-$VERSION_NAME.apk"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oppo-gpu-stats-${{ env.VERSION_NAME }}
+          path: dist/
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

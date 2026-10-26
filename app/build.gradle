@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+}
+
+// CI ký bản release bằng keystore từ secrets; không có thì dùng debug key.
+def keystoreFile = System.getenv('KEYSTORE_FILE')
+
+android {
+    namespace 'com.example.hwoverlay'
+    compileSdk 36
+    ndkVersion '28.2.13676358'
+
+    defaultConfig {
+        applicationId 'com.example.hwoverlay'
+        minSdk 26
+        targetSdk 36
+        versionCode((System.getenv('VERSION_CODE') ?: '1') as int)
+        versionName(System.getenv('VERSION_NAME') ?: '1.0.0')
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreFile) {
+                storeFile file(keystoreFile)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystoreFile ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
