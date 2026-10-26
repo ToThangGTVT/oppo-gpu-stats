@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cerrno>
+#include <cstring>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -57,6 +58,9 @@ public:
         if (d_.gpu >= 0) s.gpu = d_.gpu;
         if (d_.gpuMhz > 0) s.gpuMhz = d_.gpuMhz;
         if (d_.gpuMemMb >= 0) s.gpuMemMb = d_.gpuMemMb;
+        s.nTop = d_.nTop;
+        memcpy(s.topName, d_.topName, sizeof s.topName);
+        memcpy(s.topPct, d_.topPct, sizeof s.topPct);
         return true;
     }
 
@@ -130,6 +134,10 @@ std::thread g_thread;
 bool g_run = false;
 std::string g_status;
 
+// Số liệu pin do Java cập nhật (BatteryManager), bảo vệ bởi g_mu.
+int g_batLevel = -1;
+float g_batWatts = kNoValue, g_batVolts = kNoValue;
+
 void renderLoop(ANativeWindow* win, Layout layout, int intervalMs) {
     ANativeWindow_setBuffersGeometry(win, layout.width, layout.height, WINDOW_FORMAT_RGBA_8888);
     StatsCollector collector;
@@ -141,6 +149,12 @@ void renderLoop(ANativeWindow* win, Layout layout, int intervalMs) {
         Sample s;
         collector.sample(s);
         bool linked = link.merge(s);
+        {
+            std::lock_guard<std::mutex> lk(g_mu);
+            s.batLevel = g_batLevel;
+            s.batWatts = g_batWatts;
+            s.batVolts = g_batVolts;
+        }
         hist.push(s);
 
         ANativeWindow_Buffer buf;
@@ -180,16 +194,18 @@ Java_com_example_hwoverlay_NativeBridge_setFont(JNIEnv* env, jclass, jint slot, 
         AndroidBitmap_lockPixels(env, atlas, &px) != 0) {
         return;
     }
-    jfloat adv[95] = {};
-    env->GetFloatArrayRegion(advances, 0, 95, adv);
+    jfloat adv[96] = {};
+    if (env->GetArrayLength(advances) < 96) { AndroidBitmap_unlockPixels(env, atlas); return; }
+    env->GetFloatArrayRegion(advances, 0, 96, adv);
     stopLoop();
     setFontAtlas(slot, (const uint8_t*)px, (int)info.stride, cellW, cellH, pad, ascent, adv);
     AndroidBitmap_unlockPixels(env, atlas);
 }
 
 JNIEXPORT jintArray JNICALL
-Java_com_example_hwoverlay_NativeBridge_measure(JNIEnv* env, jclass, jfloat density, jboolean compact) {
-    Layout l = computeLayout(density, compact);
+Java_com_example_hwoverlay_NativeBridge_measure(JNIEnv* env, jclass, jfloat density, jboolean compact,
+                                               jint details) {
+    Layout l = computeLayout(density, compact, details);
     jint wh[2] = {l.width, l.height};
     jintArray arr = env->NewIntArray(2);
     env->SetIntArrayRegion(arr, 0, 2, wh);
@@ -198,16 +214,24 @@ Java_com_example_hwoverlay_NativeBridge_measure(JNIEnv* env, jclass, jfloat dens
 
 JNIEXPORT void JNICALL
 Java_com_example_hwoverlay_NativeBridge_start(JNIEnv* env, jclass, jobject surface, jfloat density,
-                                             jboolean compact, jint intervalMs) {
+                                             jboolean compact, jint details, jint intervalMs) {
     stopLoop();
     ANativeWindow* win = ANativeWindow_fromSurface(env, surface);
     if (!win) return;
-    Layout layout = computeLayout(density, compact);
+    Layout layout = computeLayout(density, compact, details);
     {
         std::lock_guard<std::mutex> lk(g_mu);
         g_run = true;
     }
     g_thread = std::thread(renderLoop, win, layout, intervalMs < 100 ? 100 : intervalMs);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_hwoverlay_NativeBridge_setBattery(JNIEnv*, jclass, jint level, jfloat watts, jfloat volts) {
+    std::lock_guard<std::mutex> lk(g_mu);
+    g_batLevel = level;
+    g_batWatts = watts;
+    g_batVolts = volts;
 }
 
 JNIEXPORT void JNICALL

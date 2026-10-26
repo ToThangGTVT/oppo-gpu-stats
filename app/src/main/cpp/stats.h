@@ -4,8 +4,11 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 constexpr int kMaxCores = 16;
+constexpr int kMaxTopProcs = 3;
+constexpr float kNoValue = -1000.f;  // giá trị chưa đọc được (dùng cho số có thể âm)
 
 struct Sample {
     // CPU
@@ -22,6 +25,20 @@ struct Sample {
     float ram = -1.f;            // % đã dùng
     float ramUsedMb = 0.f;
     float ramTotalMb = 0.f;
+    float swapUsedMb = 0.f;
+    float swapTotalMb = 0.f;
+    // Nhiệt độ (°C), từ /sys/class/thermal
+    float cpuTemp = kNoValue;
+    float gpuTemp = kNoValue;
+    float batTemp = kNoValue;
+    // Pin, do Java đẩy xuống qua BatteryManager (sysfs pin bị chặn)
+    int batLevel = -1;
+    float batWatts = kNoValue;   // dương = đang sạc, âm = đang xả
+    float batVolts = kNoValue;
+    // Tiến trình tốn CPU nhất (chỉ statd đọc được /proc/<pid>/stat)
+    int nTop = 0;
+    char topName[kMaxTopProcs][24] = {};
+    float topPct[kMaxTopProcs] = {};  // % của một nhân, như lệnh top
 
     Sample() {
         for (int i = 0; i < kMaxCores; i++) { coreLoad[i] = -1.f; coreMhz[i] = -1; }
@@ -39,6 +56,7 @@ private:
     void readCpu(Sample& out);
     void readGpu(Sample& out);
     void readRam(Sample& out);
+    void readTemps(Sample& out);
 
     int nCores_;
     int coreMaxMhz_[kMaxCores];
@@ -52,6 +70,8 @@ private:
     int gpuLoadSrc_ = -1;   // chỉ số trong bảng đường dẫn, -1 = chưa tìm thấy
     int gpuFreqSrc_ = -1;
     uint64_t prevGpuBusy_ = 0, prevGpuTotal_ = 0;
+
+    std::vector<std::string> cpuTempPaths_, gpuTempPaths_, batTempPaths_;
 };
 
 // Định dạng một dòng text để daemon gửi cho app qua TCP localhost.
